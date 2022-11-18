@@ -1,31 +1,10 @@
 (ns scribe.core-test
   (:require [clojure.test :refer :all]
-            [scribe.core :refer [record-related-syms select-query defmodel]]))
+            [scribe.models_test]
+            [scribe.core :refer [record-related-syms select-query defmodel]])
+  (:import (scribe.models_test Author Category Post )))
 
-
-(defmodel foo1
-  {:table :foo1
-   :pk :foo1.a
-   :record
-   {:a int?
-    :b int?}})
-
-(defmodel foo2
-  {:table :foo2
-   :pk :foo2.c
-   :record
-   {:c int?
-    :d int?}})
-
-
-(defmodel foo3
-  {:table :foo3
-   :pk :foo3.id
-   :record {:id int?
-            :e int?
-            :foo1 {:model foo1
-                   :relationship :one-to-one
-                   :fk :foo1.a}}})
+(defrecord foo1 [])
 
 (deftest test-record-related-syms
   (is (=  (record-related-syms foo1 {:prefix 'map->})
@@ -40,14 +19,31 @@
 
 (deftest test-select-query
   (testing "select query generation for one-to-one relationships"
-    (is (= (select-query foo1)
-           {:select [:foo1.a :foo1.b], :from [:foo1]}))
-    (is (= (select-query foo3)
+    (is (= (select-query Author)
+           {:select [:blog.author.id :blog.author.name],
+            :from [:blog.author]}))
+    (is (= (select-query Post)
            {:select
-            [:foo3.id
-             :foo3.e
+            [:blog.post.id
+             :blog.post.title
+             :blog.post.body
+             :blog.post.published_on
              [{:select [[[:to_json :child]]],
-               :from [[{:select [:foo1.a :foo1.b], :from [:foo1]} :child]],
-               :where [:= :foo3.id :foo1.a]}
-              :foo1]],
-            :from [:foo3]}))))
+               :from
+               [[{:select [:blog.author.id :blog.author.name],
+                  :from [:blog.author]}
+                 :child]],
+               :where [:= :post.id :author.id]}
+              :author]
+             [{:select [[[:json_agg :item]]],
+               :from
+               [[{:select [:blog.category.id :blog.category.name],
+                  :from [:blog.category],
+                  :join
+                  [[:category_and_posts]
+                   [:= :category_and_posts.category_id :category.id]],
+                  :where [:= :category_and_posts.post_id :post.id]}
+                 :item]]}
+              :category]],
+            :from [:blog.post]}))))
+
