@@ -61,9 +61,39 @@
     sym))
 
 (defn spec
-  "Returns the spec for model `modoel`"
+  "Returns the spec for model `model`. 
+  `model` can be a java class 
+  or the instantiated record of that class.
+
+   
+  Example Usage 
+  (defmodel a-model
+    {:table :model
+    :pk :id
+    :record {:id int?}})
+  (spec a-model)
+  ;; => {:table :model, :pk :id, :record {:id #function[clojure.core/int?]}}
+  
+  (spec #scribe.core.a-model{:id 1})
+  ;; => {:table :model, :pk :id, :record {:id #function[clojure.core/int?]}}
+  "
   [model]
-  ((resolve (record-related-syms model {:suffix '-spec}))))
+  (if (satisfies? SModel model)
+    (.spec model)
+    ((resolve (record-related-syms model {:suffix '-spec})))))
+
+(comment
+  ;; usage of `spec` 
+  (defmodel a-model
+    {:table :model
+     :pk :id
+     :record {:id int?}})
+  (spec a-model)
+  ;; => {:table :model, :pk :id, :record {:id #function[clojure.core/int?]}}
+
+  (spec #scribe.core.a-model{:id 1})
+  ;; => {:table :model, :pk :id, :record {:id #function[clojure.core/int?]}}
+  )
 
 
 (defn construct-record [record-sym]

@@ -1,8 +1,9 @@
 (ns scribe.core-test
   (:require [clojure.test :refer :all]
-            [scribe.models_test]
-            [scribe.core :refer [record-related-syms select-query defmodel]])
-  (:import (scribe.models_test Author Category Post )))
+            [scribe.models-test :refer [Author-spec]]
+            [scribe.core :refer [record-related-syms select-query defmodel spec]]
+            [clojure.string :as string])
+  (:import (scribe.models_test Author Category Post)))
 
 (defrecord foo1 [])
 
@@ -16,6 +17,13 @@
                                                       :suffix '->vec})
           'scribe.core-test/map->foo1->vec)
       "Can handle symbols with underscores"))
+
+(deftest test-spec
+  (is (= (spec Author)
+         Author-spec))
+  (is (= (spec (Author. 1 "Author"))
+         Author-spec)))
+
 
 (deftest test-select-query
   (testing "select query generation for one-to-one relationships"
