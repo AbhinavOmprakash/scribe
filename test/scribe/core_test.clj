@@ -1,11 +1,20 @@
 (ns scribe.core-test
   (:require [clojure.test :refer :all]
-            [scribe.models-test :refer [Author-spec]]
-            [scribe.core :refer [record-related-syms select-query defmodel spec]]
+            [scribe.models-test :refer [Author-spec
+                                        map->Post
+                                        map->Author
+                                        map->Editor
+                                        map->Publication]]
+            [scribe.core :refer [record-related-syms
+                                 select-query
+                                 defmodel
+                                 spec
+                                 unnest]]
             [clojure.string :as string])
-  (:import (scribe.models_test Author Category Post)))
+  (:import (scribe.models_test Author Category Post Publication)))
 
 (defrecord foo1 [])
+
 
 (deftest test-record-related-syms
   (is (=  (record-related-syms foo1 {:prefix 'map->})
@@ -21,9 +30,70 @@
 (deftest test-spec
   (is (= (spec Author)
          Author-spec))
-  (is (= (spec (Author. 1 "Author"))
+  (is (= (spec (map->Author {:id 1 :name "Author"}))
          Author-spec)))
 
+;; write test for unnest when map has more keys than the record does 
+;; and when a record column is a derived-column. 
+(deftest test-unnest
+  (testing "nil behaviour"
+    (is (= (unnest Author nil)
+           {:blog.author {}}))
+    (is (thrown? java.lang.AssertionError (unnest nil nil))))
+
+  (testing "Simple case of unnest, where models have one-to-one relationships. "
+    (let [author1 (map->Author {:id 1 :name "Author"})
+          post1 (map->Post {:id 1 :author author1})]
+      (is (= (unnest Author author1)
+             {:blog.author {:id 1, :name "Author"}}))
+      (is (= (unnest Post post1)
+             {:blog.post {:id 1, :title nil, :body nil, :published_on nil},
+              :blog.author {:id 1, :name "Author"},
+              :blog.category {}}))))
+
+  (testing "Simple case of unnest, where multiple objects of the same model are passed."
+    (let [author1 (map->Author {:id 1 :name "Author 1"})
+          author2 (map->Author {:id 2 :name "Author 2"})
+          author3 (map->Author {:id 3 :name "Author 2"})]
+      (is (= (unnest Author author1 author2 author3)
+             {:blog.author
+              [{:id 1, :name "Author 1"}
+               {:id 2, :name "Author 2"}
+               {:id 3, :name "Author 2"}]}
+             {:blog.author {:id 1, :name "Author"}}))))
+
+  (testing "Unnest can handle one-to-many nested objects"
+    (let [ed1 (map->Editor {:id 1})
+          ed2 (map->Editor {:id 2})
+          ed3 (map->Editor {:id 3})
+          pub (map->Publication {:id 1 :name "Publication" :editors [ed1 ed2 ed3]})]
+      (is (= (unnest Publication pub)
+             {:blog.publication {:id 1, :name "Publication"},
+              :blog.editor
+              [{:id 1, :name nil, :publication nil}
+               {:id 2, :name nil, :publication nil}
+               {:id 3, :name nil, :publication nil}]}))))
+  (testing "Unnest can handle multiple one-to-many nested objects"
+    (let [ed1 (map->Editor {:id 1})
+          ed2 (map->Editor {:id 2})
+          ed3 (map->Editor {:id 3})
+          pub1 (map->Publication {:id 1 :name "Publication" :editors [ed1 ed2 ed3]})
+
+
+          ed4 (map->Editor {:id 4})
+          ed5 (map->Editor {:id 5})
+          ed6 (map->Editor {:id 6})
+          pub2 (map->Publication {:id 2 :name "Publication 2" :editors [ed4 ed5 ed6]})]
+      (is (= (unnest Publication pub1 pub2)
+             {:blog.publication
+              [{:id 1, :name "Publication"} {:id 2, :name "Publication 2"}],
+              :blog.editor
+              [{:id 1, :name nil, :publication nil}
+               {:id 2, :name nil, :publication nil}
+               {:id 3, :name nil, :publication nil}
+               {:id 4, :name nil, :publication nil}
+               {:id 5, :name nil, :publication nil}
+               {:id 6, :name nil, :publication nil}]})))))
 
 (deftest test-select-query
   (testing "select query generation for one-to-one relationships"

@@ -12,10 +12,9 @@
    :record {:id int?
             :name string?
             ;; For iteration 1 lets NOT model bidirectional relationships
-            #_:posts #_{:model Post 
-                    :relationship :one-to-many
-                    :fk :post.id
-                    }}})
+            #_:posts #_{:model Post
+                        :relationship :one-to-many
+                        :fk :post.id}}})
 
 ;; going to assume one post can only have one author
 
@@ -43,8 +42,26 @@
             :name string?
 ;; For iteration 1 lets NOT model bidirectional relationships
             #_:posts #_{:model Post
-                    :relationship :many-to-many
-                    :fk :post.id
-                    :mapping-table :category_and_posts
-                    :mapping-table-fk :category_and_posts.post_id
-                    :mapping-table-pk :category_and_posts.category_id}}})
+                        :relationship :many-to-many
+                        :fk :post.id
+                        :mapping-table :category_and_posts
+                        :mapping-table-fk :category_and_posts.post_id
+                        :mapping-table-pk :category_and_posts.category_id}}})
+
+(defmodel Editor 
+  {:table :blog.editor
+   :pk :editor.id 
+   :record {:id int?
+            :name string?
+            :publication int?}})
+
+;; Editors can only work for one Publication at a time.
+(defmodel Publication
+  {:table  :blog.publication
+   :pk     :publication.id
+   :record {:id    int?
+            :name  string?
+            :editors {:model Editor 
+                      :relationship :one-to-many 
+                      :fk :editor.publication
+                      }}})

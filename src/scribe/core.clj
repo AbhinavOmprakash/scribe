@@ -3,7 +3,6 @@
             [clojure.walk :as walk]
             [scribe.postgres :as pg]))
 
-
 ;; useful for writing macros
 (defn concat-symbols
   "Concatenates all the symbols passed."
@@ -91,7 +90,7 @@
   (spec a-model)
   ;; => {:table :model, :pk :id, :record {:id #function[clojure.core/int?]}}
 
-  (spec #scribe.core.a-model{:id 1})
+  ;(spec #scribe.core.a-model{:id 1})
   ;; => {:table :model, :pk :id, :record {:id #function[clojure.core/int?]}}
   )
 
@@ -101,34 +100,21 @@
    {}))
 
 
-(defmodel foo1
-  {:table :foo1
-   :pk :foo1.a
-   :record
-   {:a int?
-    :b int?}})
-
-(defmodel foo2
-  {:table :foo2
-   :pk :foo2.c
-   :record
-   {:c int?
-    :d int?
-    :foo1 {:model foo1
-           :relationship :one-to-one
-           :fk :a}}})
-
-
-(-> (foo2-spec)
-    :record
-    :foo1
-    :model)
-
 (defn join-table?
   [column-spec]
   (and (map? column-spec)
        (contains? column-spec :relationship)))
 
+(defn keys-for-joined-tables
+  ;; rewrite docstring.
+  "Returns a set of keys for joined tables."
+  [{:keys [record] :as _spec}]
+  (reduce-kv (fn [acc k v]
+               (if (join-table? v)
+                 (conj acc k)
+                 acc))
+             #{}
+             record))
 
 (defn derived-column?
   [column-spec]
@@ -183,6 +169,7 @@
                                               mapping-table-pk
                                               mapping-table-fk))))
 
+;; select query 
 (declare select-query)
 
 (defn qualified-projections
@@ -195,19 +182,136 @@
              record))
 
 
-(defn select-query [model]
+(defn select-query
+  "Generates a select query for `model`.
+  Hydrates all related objects."
+  [model]
   (let [{:keys [table record]
          :as spec} (spec model)]
     {:select (qualified-projections spec)
      :from [table]}))
 
-(select-query foo2)
-; {:select
-;  [:foo2.c
-;   :foo2.d
-;   [{:select [[[:to_json :child]]],
-;     :from [[{:select [:foo1.a :foo1.b], :from [:foo1]} :child]],
-;     :where [:= :foo2.c :a]}
-;    :foo1]],
-;  :from [:foo2]}
+(defn record
+  "Extract the record of a model"
+  [model]
+  (if (map? model)
+    (:record model)
+    (:record (spec model))))
 
+;; update query 
+
+(defn* unnest
+  "The unnest algorithm
+  1. The tree is the parent object. Select all the keys from the parent object corresponding to the 
+  keys in the record. The record is the source of truth for the db.
+  2. In order to unnest an object, we need to know which kv pairs refer to other tables. 
+     We refer to the model's spec for this
+  "
+  ([model tree]
+   (assert (some? model) "`model` can't be nil, must be a java class.")
+   (let [spec* (spec model)
+         tree* (select-keys tree (keys (record model)))
+         table* (:table spec*)
+         join-ks (keys-for-joined-tables spec*)]
+     (reduce-kv (*fn [acc k v]
+                     (if (contains? join-ks k)
+                       (let [child-model (-> spec* record k :model)
+                             child-map (cond
+                                         (map? v)
+                                         (unnest child-model v)
+
+                                 ;; if v is nil, apply will ignore it 
+                                 ;; and pass only child-model to 
+                                 ;; throwing an arity exception
+                                         (nil? v)
+                                         (unnest child-model v)
+
+                                         (seqable? v)
+                                         (apply unnest child-model v)
+                                         )]
+                         (merge acc child-map))
+                       acc))
+                {table* (apply dissoc tree* join-ks)}
+                tree*)))
+  ([model tree & trees]
+   (->> (map (partial unnest model) (cons tree trees))
+        (apply merge-with  (fn [a b]
+                             (cond
+                               (map? a)
+                               [a b]
+
+                               (and (not (map? a))
+                                    (map? b))
+                               (conj a b)
+
+                               (and (seqable? a)
+                                    (seqable? b))
+                               (vec (concat a b))))))))
+
+
+
+(defn update-query
+  "Generates update query for `model`"
+  [model value])
+
+(defn update-models [parent-model values])
+
+(comment
+
+
+  (declare-model Category Post)
+
+  (defmodel Author
+    {:table :blog.author
+     :pk :author.id
+     :record {:id int?
+              :name string?
+            ;; For iteration 1 lets NOT model bidirectional relationships
+              :posts {:model Post
+                      :relationship :one-to-many
+                      :fk :post.id}}})
+
+;; going to assume one post can only have one author
+
+  (defmodel Post
+    {:table :blog.post
+     :pk :post.id
+     :record {:id int?
+              :title string?
+              :body string?
+              :published_on inst?
+              #_:author #_{:model Author
+                           :relationship :one-to-one
+                           :column? true
+                           :fk :author.id}
+              #_:category #_{:model Category
+                             :relationship :many-to-many
+                             :fk :category.id
+                             :mapping-table :category_and_posts
+                             :mapping-table-fk :category_and_posts.category_id
+                             :mapping-table-pk :category_and_posts.post_id}}})
+
+  (defmodel Category
+    {:table :blog.category
+     :pk :category.id
+     :record {:id int?
+              :name string?
+;; For iteration 1 lets NOT model bidirectional relationships
+              #_:posts #_{:model Post
+                          :relationship :many-to-many
+                          :fk :post.id
+                          :mapping-table :category_and_posts
+                          :mapping-table-fk :category_and_posts.post_id
+                          :mapping-table-pk :category_and_posts.category_id}}})
+  
+  
+(def a2 {:id 2, :name "abhinav O" :posts [p3 p4]})
+
+(def p (Post. 1 "post t" "post b" (java.time.LocalTime/now)))
+
+(def p2 (Post. 2 "post 2" "post c" (java.time.LocalTime/now)))
+(def p3 (Post. 3 "post 2" "post c" (java.time.LocalTime/now)))
+(def p4 (Post. 4 "post 2" "post c" (java.time.LocalTime/now)))
+
+(def a (map->Author {:id 1, :name "abhinav" :posts [p p2]}))
+  )
