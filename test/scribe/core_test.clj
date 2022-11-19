@@ -29,9 +29,9 @@
 
 (deftest test-spec
   (is (= (spec Author)
-         Author-spec))
+         (Author-spec)))
   (is (= (spec (map->Author {:id 1 :name "Author"}))
-         Author-spec)))
+         (Author-spec))))
 
 ;; write test for unnest when map has more keys than the record does 
 ;; and when a record column is a derived-column. 
@@ -59,8 +59,7 @@
              {:blog.author
               [{:id 1, :name "Author 1"}
                {:id 2, :name "Author 2"}
-               {:id 3, :name "Author 2"}]}
-             {:blog.author {:id 1, :name "Author"}}))))
+               {:id 3, :name "Author 2"}]}))))
 
   (testing "Unnest can handle one-to-many nested objects"
     (let [ed1 (map->Editor {:id 1})

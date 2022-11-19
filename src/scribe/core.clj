@@ -200,7 +200,7 @@
 
 ;; update query 
 
-(defn* unnest
+(defn unnest
   "The unnest algorithm
   1. The tree is the parent object. Select all the keys from the parent object corresponding to the 
   keys in the record. The record is the source of truth for the db.
@@ -213,24 +213,23 @@
          tree* (select-keys tree (keys (record model)))
          table* (:table spec*)
          join-ks (keys-for-joined-tables spec*)]
-     (reduce-kv (*fn [acc k v]
-                     (if (contains? join-ks k)
-                       (let [child-model (-> spec* record k :model)
-                             child-map (cond
-                                         (map? v)
-                                         (unnest child-model v)
+     (reduce-kv (fn [acc k v]
+                  (if (contains? join-ks k)
+                    (let [child-model (-> spec* record k :model)
+                          child-map (cond
+                                      (map? v)
+                                      (unnest child-model v)
 
                                  ;; if v is nil, apply will ignore it 
                                  ;; and pass only child-model to 
                                  ;; throwing an arity exception
-                                         (nil? v)
-                                         (unnest child-model v)
+                                      (nil? v)
+                                      (unnest child-model v)
 
-                                         (seqable? v)
-                                         (apply unnest child-model v)
-                                         )]
-                         (merge acc child-map))
-                       acc))
+                                      (seqable? v)
+                                      (apply unnest child-model v))]
+                      (merge acc child-map))
+                    acc))
                 {table* (apply dissoc tree* join-ks)}
                 tree*)))
   ([model tree & trees]
@@ -303,15 +302,14 @@
                           :mapping-table :category_and_posts
                           :mapping-table-fk :category_and_posts.post_id
                           :mapping-table-pk :category_and_posts.category_id}}})
-  
-  
-(def a2 {:id 2, :name "abhinav O" :posts [p3 p4]})
 
-(def p (Post. 1 "post t" "post b" (java.time.LocalTime/now)))
 
-(def p2 (Post. 2 "post 2" "post c" (java.time.LocalTime/now)))
-(def p3 (Post. 3 "post 2" "post c" (java.time.LocalTime/now)))
-(def p4 (Post. 4 "post 2" "post c" (java.time.LocalTime/now)))
+  (def a2 {:id 2, :name "abhinav O" :posts [p3 p4]})
 
-(def a (map->Author {:id 1, :name "abhinav" :posts [p p2]}))
-  )
+  (def p (Post. 1 "post t" "post b" (java.time.LocalTime/now)))
+
+  (def p2 (Post. 2 "post 2" "post c" (java.time.LocalTime/now)))
+  (def p3 (Post. 3 "post 2" "post c" (java.time.LocalTime/now)))
+  (def p4 (Post. 4 "post 2" "post c" (java.time.LocalTime/now)))
+
+  (def a (map->Author {:id 1, :name "abhinav" :posts [p p2]})))
