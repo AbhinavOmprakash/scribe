@@ -169,6 +169,14 @@
                                               mapping-table-pk
                                               mapping-table-fk))))
 
+(defn unqaulified-column
+  [column]
+  (when column
+    (let [column* (name column)]
+      (if (str/includes? column* ".")
+        (keyword (last (str/split column* #"\.")))
+        column))))
+
 ;; select query 
 (declare select-query)
 
@@ -210,6 +218,7 @@
   ([model tree]
    (assert (some? model) "`model` can't be nil, must be a java class.")
    (let [spec* (spec model)
+         pk (:pk spec*)
          tree* (select-keys tree (keys (record model)))
          table* (:table spec*)
          join-ks (keys-for-joined-tables spec*)]
@@ -230,7 +239,8 @@
                                       (apply unnest child-model v))]
                       (merge acc child-map))
                     acc))
-                {table* (apply dissoc tree* join-ks)}
+                {table* {:value (apply dissoc tree* join-ks)
+                         :pk pk}}
                 tree*)))
   ([model tree & trees]
    (->> (map (partial unnest model) (cons tree trees))
@@ -247,17 +257,65 @@
                                     (seqable? b))
                                (vec (concat a b))))))))
 
+;; simplistic.
+(defn gen-update-query [table value where]
+  {:update table
+   :set value
+   :where where})
 
+; find better name
+(defn unnested-object->update-query [table {:keys [value pk]}]
+  (gen-update-query table value [:= pk (get value (unqaulified-column pk))]))
 
+;; simplistic, won't work for many-to-many relationships yet.
 (defn update-query
   "Generates update query for `model`"
-  [model value])
+  [model value]
+  (let [unnested (unnest model value)]
+    (reduce-kv (fn [acc table values]
+                 (if (map? values)
+                   (conj acc (unnested-object->update-query table values))
+                   (concat acc (map (partial unnested-object->update-query table) values))))
+               []
+               unnested)))
+(defn unnested-object->insert-query [table {:keys [value pk]}]
+  (gen-update-query table value [:= pk (get value (unqaulified-column pk))]))
 
-(defn update-models [parent-model values])
+(defn insert-query
+  [model value]
+  (let [unnested (unnest model value)]
+    (reduce-kv (fn [acc table values]
+                 (let [values* (if (map? values)
+                                 [(:value values )]
+                                 (map :value values))
+                       ] 
+
+                   (conj acc {:insert-into [table]
+                             :values values*}) ))
+               []
+               unnested)))
+
+
+(defn delete-query 
+  [model value]
+  (let [unnested (unnest model value)]
+    (reduce-kv (fn [acc table values]
+                 (let [pk (if (map? values)
+                                 (:pk values )
+                                 (:pk (first values) ))
+                       pk* (unqaulified-column pk)
+                       values* (if (map? values) 
+                                 [values] values)
+                       ] 
+
+                   (conj acc {:delete-from [table]
+                             :where [:in pk (map (comp pk* :value) values*)]}) ))
+               []
+               unnested))
+  )
+
 
 (comment
-
-
   (declare-model Category Post)
 
   (defmodel Author
