@@ -1,11 +1,16 @@
 (ns scribe.core-test
   (:require [clojure.test :refer :all]
-            [scribe.models-test :refer [Author-spec]]
-            [scribe.core :refer [record-related-syms select-query defmodel spec]]
+            [scribe.models-test :refer [Author-spec map->Post]]
+            [scribe.core :refer [record-related-syms
+                                 select-query
+                                 defmodel
+                                 spec
+                                 unnest]]
             [clojure.string :as string])
   (:import (scribe.models_test Author Category Post)))
 
 (defrecord foo1 [])
+
 
 (deftest test-record-related-syms
   (is (=  (record-related-syms foo1 {:prefix 'map->})
@@ -24,6 +29,16 @@
   (is (= (spec (Author. 1 "Author"))
          Author-spec)))
 
+(deftest test-unnest
+  (*let [author1 (Author. 1 "Author")
+         post1 (map->Post {:id 1 :author author1})]
+        (is (= (unnest Author author1)
+               {:blog.author {:id 1, :name "Author"}}))
+        (is (= (unnest Post post1)
+               {:blog.post {:id 1, :title nil, :body nil, :published_on nil},
+                :blog.author {:id 1, :name "Author"},
+                :blog.category nil}))))
+(spec Post)
 
 (deftest test-select-query
   (testing "select query generation for one-to-one relationships"

@@ -2,6 +2,7 @@
   (:require [clojure.string :as str]
             [clojure.walk :as walk]
             [scribe.postgres :as pg]))
+(require '[snitch.core :refer [defn* defmethod*]])
 
 
 ;; useful for writing macros
@@ -129,6 +130,16 @@
   (and (map? column-spec)
        (contains? column-spec :relationship)))
 
+(defn keys-for-joined-tables
+  ;; rewrite docstring.
+  "Returns a set of keys for joined tables."
+  [{:keys [record] :as _spec}]
+  (reduce-kv (fn [acc k v]
+               (if (join-table? v)
+                 (conj acc k)
+                 acc))
+             #{}
+             record))
 
 (defn derived-column?
   [column-spec]
@@ -183,6 +194,7 @@
                                               mapping-table-pk
                                               mapping-table-fk))))
 
+;; select query 
 (declare select-query)
 
 (defn qualified-projections
@@ -195,19 +207,121 @@
              record))
 
 
-(defn select-query [model]
+(defn select-query
+  "Generates a select query for `model`.
+  Hydrates all related objects."
+  [model]
   (let [{:keys [table record]
          :as spec} (spec model)]
     {:select (qualified-projections spec)
      :from [table]}))
 
-(select-query foo2)
-; {:select
-;  [:foo2.c
-;   :foo2.d
-;   [{:select [[[:to_json :child]]],
-;     :from [[{:select [:foo1.a :foo1.b], :from [:foo1]} :child]],
-;     :where [:= :foo2.c :a]}
-;    :foo1]],
-;  :from [:foo2]}
+(defn record [model]
+  "Extract the record of a model"
+  (if (map? model)
+    (:record model)
+    (:record (spec model))))
 
+;; update query 
+
+(defn* unnest
+  "The unnest algorithm
+  1. The tree is the parent object. Select all the keys from the parent object corresponding to the 
+  keys in the record. The record is the source of truth for the db.
+  2. In order to unnest an object, we need to know which kv pairs refer to other tables. 
+     We refer to the model's spec for this
+  "
+  [model tree]
+  (let [spec* (spec model)
+        tree* (select-keys tree (keys (record model)))
+        table* (:table spec*)
+        join-ks (keys-for-joined-tables spec*)]
+    (reduce-kv (*fn [acc k v]
+                    (if (contains? join-ks k)
+                      (let [child-model (-> spec* record k :model)]
+                        (merge acc  (unnest child-model v)))
+                      acc))
+               {table* (apply dissoc tree* join-ks)}
+               tree*)))
+
+(unnest Post p)
+{:id 1,
+
+ :title "post t",
+
+ :body "post b",
+
+ :published_on
+
+ #object[java.time.LocalTime 0xccc60 "21:19:21.239712300"],
+
+ :author {:id 1, :name "abhinav"}}
+
+{:post {:id 1,
+        :title "post t",
+        :body "post b",
+        :published_on
+        #object[java.time.LocalTime 0xccc60 "21:19:21.239712300"],
+        :author 1}
+ :author {:id 1, :name "abhinav"}}
+
+
+
+(defn update-query
+  "Generates update query for `model`"
+  [model value])
+
+(defn update-models [parent-model values])
+
+(def a {:id 1, :name "abhinav"})
+
+(def p (Post. 1 "post t" "post b" (java.time.LocalTime/now) a))
+
+
+(comment
+
+
+  (declare-model Category Post)
+
+  (defmodel Author
+    {:table :blog.author
+     :pk :author.id
+     :record {:id int?
+              :name string?
+            ;; For iteration 1 lets NOT model bidirectional relationships
+              #_:posts #_{:model Post
+                          :relationship :one-to-many
+                          :fk :post.id}}})
+
+;; going to assume one post can only have one author
+
+  (defmodel Post
+    {:table :blog.post
+     :pk :post.id
+     :record {:id int?
+              :title string?
+              :body string?
+              :published_on inst?
+              :author {:model Author
+                       :relationship :one-to-one
+                       :column? true
+                       :fk :author.id}
+              #_:category #_{:model Category
+                             :relationship :many-to-many
+                             :fk :category.id
+                             :mapping-table :category_and_posts
+                             :mapping-table-fk :category_and_posts.category_id
+                             :mapping-table-pk :category_and_posts.post_id}}})
+
+  (defmodel Category
+    {:table :blog.category
+     :pk :category.id
+     :record {:id int?
+              :name string?
+;; For iteration 1 lets NOT model bidirectional relationships
+              #_:posts #_{:model Post
+                          :relationship :many-to-many
+                          :fk :post.id
+                          :mapping-table :category_and_posts
+                          :mapping-table-fk :category_and_posts.post_id
+                          :mapping-table-pk :category_and_posts.category_id}}}))
